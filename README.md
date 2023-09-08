@@ -1,2 +1,1 @@
-# soa2
-mafia
+# SOA Mafia
