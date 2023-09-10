@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package Mafia.Connection;
+
+// import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "jpepper/mafia.connection";
+
+message User {
+    uint64 ID = 1;
+    string Nickname = 2;
+}
+
+message ChatMessage {
+    string Text = 1;
+    User Author = 2;
+}
+
+enum Role {
+    UNKNOWN = 0;
+    MAFIA = 1;
+    SHERIFF = 2;
+    CIVILIAN = 3;
+};
+
+enum State {
+    NOT_STARTED = 0;
+    NIGHT = 1;
+    DAY = 2;
+    END = 3;
+};
+
+message Player {
+    User User = 1;
+    Role Role = 2;
+    bool Alive = 3;
+}
+
+message RoomInfo {
+    uint64 RoomID = 1;
+    State State = 2;
+    repeated Player Players = 3;
+}
+
+message RoomEvent {
+    google.protobuf.StringValue Event = 1;
+    RoomInfo RoomInfo = 2;
+}
+
+message PlayerAction {
+    oneof Action {
+        User Connetion = 1;
+        User Vote = 2;
+        User Mafia = 3;
+    }
+}
+
+message ServerAction {
+    oneof Action {
+        ChatMessage ChatMessage = 1;
+        RoomEvent Event = 2;
+    }
+}
+
+
+service MafiaService {
+    rpc RouteGame(stream PlayerAction) returns (stream ServerAction) {}
+}
