@@ -15,7 +15,6 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	cfg := client.Config{
-		BotMode:       true,
 		ServerAddr:    "localhost:5050",
 		RabbitmqCreds: "amqp://guest:guest@localhost:5672/",
 	}
@@ -28,8 +27,9 @@ func main() {
 		return
 	}
 
+	client := client.GetClient()
 	for {
-		client := client.GetClient()
 		client.Run(cfg.ServerAddr, cfg.RabbitmqCreds)
+		client.Clear()
 	}
 }

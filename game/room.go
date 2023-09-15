@@ -152,8 +152,6 @@ func (r *Room) checkAllVoted() {
 				killRequest[p.voteFor] += 1
 			}
 		}
-		killed := r.players[utils.GetRandomMaximumIndex(killRequest)]
-		killed.info.Alive = false
 
 		for _, p := range r.players {
 			if p.info.Role == mafia_connection.Role_SHERIFF && p.info.Alive {
@@ -163,6 +161,9 @@ func (r *Room) checkAllVoted() {
 				disclosureRequest[p.voteFor] += 1
 			}
 		}
+
+		killed := r.players[utils.GetRandomMaximumIndex(killRequest)]
+		killed.info.Alive = false
 		disclosured := r.players[utils.GetRandomMaximumIndex(disclosureRequest)]
 		disclosured.checkedBySherif = true
 
@@ -210,16 +211,16 @@ func (r *Room) VoteRequest(author *mafia_connection.User, target *mafia_connecti
 		}
 	}
 	if !authorPlayer.info.Alive || !targetPlayer.info.Alive {
-		r.SendIncorrectRequestMessage(author)
+		r.sendIncorrectRequestMessage(author)
 		return
 	}
 	if r.state == mafia_connection.State_END || r.state == mafia_connection.State_NOT_STARTED {
-		r.SendIncorrectRequestMessage(author)
+		r.sendIncorrectRequestMessage(author)
 		return
 	}
 	if r.state == mafia_connection.State_NIGHT {
 		if authorPlayer.info.Role == mafia_connection.Role_CIVILIAN || authorPlayer.info.Role == mafia_connection.Role_UNKNOWN {
-			r.SendIncorrectRequestMessage(author)
+			r.sendIncorrectRequestMessage(author)
 			return
 		}
 	}
@@ -240,11 +241,11 @@ func (r *Room) ShowRequest(author *mafia_connection.User, target *mafia_connecti
 		}
 	}
 	if !authorPlayer.info.Alive || authorPlayer.info.Role != mafia_connection.Role_SHERIFF {
-		r.SendIncorrectRequestMessage(author)
+		r.sendIncorrectRequestMessage(author)
 		return
 	}
 	if r.state != mafia_connection.State_DAY {
-		r.SendIncorrectRequestMessage(author)
+		r.sendIncorrectRequestMessage(author)
 		return
 	}
 	targetPlayer.shownBySherif = true
@@ -351,4 +352,8 @@ func (r *Room) SendInfoForUser(user *mafia_connection.User, message string) {
 
 func (r *Room) SendIncorrectRequestMessage(user *mafia_connection.User) {
 	r.SendInfoForUser(user, "Incorrect command")
+}
+
+func (r *Room) sendIncorrectRequestMessage(user *mafia_connection.User) {
+	r.sendInfoForUser(user, "Incorrect command")
 }

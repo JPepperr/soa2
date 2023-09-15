@@ -87,6 +87,16 @@ func (s *Server) AddPlayer(user *mafia_connection.User, stream mafia_connection.
 	return room.ID
 }
 
+func (s *Server) RemovePlayer(user *mafia_connection.User) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	id, ok := s.playersToRooms[user.ID]
+	if ok {
+		s.rooms[id].LeaveRoom(user)
+	}
+	delete(s.playersToRooms, user.ID)
+}
+
 func (s *Server) HandlePlayersActions(
 	stopJobs chan bool,
 	errChan chan error,
@@ -103,10 +113,7 @@ func (s *Server) HandlePlayersActions(
 			playerAction, err := stream.Recv()
 			if err != nil {
 				if curUserData != nil {
-					id, ok := s.playersToRooms[curUserData.ID]
-					if ok {
-						s.rooms[id].LeaveRoom(curUserData)
-					}
+					s.RemovePlayer(curUserData)
 				}
 				errChan <- err
 				return

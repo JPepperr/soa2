@@ -9,6 +9,7 @@ import (
 	"mafia/client/lib/cli"
 	mafia_connection "mafia/protos"
 	"mafia/utils"
+	"math/rand"
 	"strings"
 	"sync"
 
@@ -20,12 +21,12 @@ import (
 
 type Config struct {
 	ServerAddr    string `config:"server-addr"`
-	BotMode       bool   `config:"bot"`
 	RabbitmqCreds string `config:"rabbitmq-creds"`
 }
 
 type Option struct {
 	chat   bool
+	rand   bool
 	action *mafia_connection.PlayerAction
 }
 
@@ -41,6 +42,17 @@ type Client struct {
 	prompt     *prompt.Prompt
 	grpcClient mafia_connection.MafiaServiceClient
 	stream     mafia_connection.MafiaService_RouteGameClient
+}
+
+func (c *Client) Clear() {
+	for k := range c.possibleOptions {
+		delete(c.possibleOptions, k)
+	}
+	c.roomInfo = nil
+	c.chat = createChat()
+	cl, p := cli.GetCli()
+	c.cli = cl
+	c.prompt = p
 }
 
 func GetClient() *Client {
@@ -100,7 +112,17 @@ func (c *Client) printRoomInfo() {
 	}
 }
 
+func (c *Client) addRandOption() {
+	for _, opt := range c.possibleOptions {
+		if !opt.chat {
+			c.possibleOptions[RAND_COMMAND] = Option{rand: true}
+			return
+		}
+	}
+}
+
 func (c *Client) buildOptions() {
+	defer c.addRandOption()
 	for k := range c.possibleOptions {
 		delete(c.possibleOptions, k)
 	}
@@ -171,10 +193,19 @@ func (c *Client) buildOptions() {
 func (c *Client) buildOptionsAndSuggests() {
 	c.buildOptions()
 	c.cli.Suggests = make([]prompt.Suggest, 0)
-	for text := range c.possibleOptions {
-		c.cli.Suggests = append(c.cli.Suggests, prompt.Suggest{
-			Text: text,
-		})
+	for text, opt := range c.possibleOptions {
+		if opt.rand {
+			c.cli.Suggests = append(c.cli.Suggests, prompt.Suggest{
+				Text: text,
+			})
+		}
+	}
+	for text, opt := range c.possibleOptions {
+		if !opt.rand {
+			c.cli.Suggests = append(c.cli.Suggests, prompt.Suggest{
+				Text: text,
+			})
+		}
 	}
 }
 
@@ -221,7 +252,22 @@ func (c *Client) ResolveCommand(command string) error {
 		c.cli.Println(UNKNOWN_COMMAND)
 		return errUnknownCommand
 	}
-	return c.stream.Send(opt.action)
+	if opt.rand {
+		cnt := rand.Intn(len(c.possibleOptions) - 2)
+		for desc, opt := range c.possibleOptions {
+			if !opt.chat && !opt.rand {
+				if cnt > 0 {
+					cnt--
+				} else {
+					c.cli.Println(desc)
+					return c.stream.Send(opt.action)
+				}
+			}
+		}
+		return nil
+	} else {
+		return c.stream.Send(opt.action)
+	}
 }
 
 func (c *Client) HandleServerActions(
@@ -373,6 +419,7 @@ var (
 	CONNECT_TO_SERVER_OPTION = "Connect to server"
 	CHANGE_NICKNAME_OPTION   = "Change nickname"
 	CHAT_COMMAND             = "chat "
+	RAND_COMMAND             = "rand"
 	UNKNOWN_COMMAND          = "Unknown command"
 	errUnknownCommand        = errors.New(UNKNOWN_COMMAND)
 )
