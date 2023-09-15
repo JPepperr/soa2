@@ -24,12 +24,12 @@ func (c *Cli) executor(in string) {
 
 func (c *Cli) completer(in prompt.Document) []prompt.Suggest {
 	c.buffer = in.Text
-	return prompt.FilterHasPrefix(c.Suggests, in.GetWordBeforeCursor(), true)
+	return prompt.FilterHasPrefix(c.Suggests, in.Text, false)
 }
 
 func (c *Cli) Println(in string) {
 	fmt.Printf("\033[2K\r%s\n", in)
-	fmt.Print(PROMPT_PREFIX, c.buffer)
+	fmt.Printf("\033[2K\r%s%s\r", PROMPT_PREFIX, c.buffer)
 }
 
 func GetCli() (*Cli, *prompt.Prompt) {

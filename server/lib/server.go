@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -68,33 +67,6 @@ func InitServer(cfg *Config) (*Server, error) {
 	}, nil
 }
 
-func (s *Server) StartChat(
-	stopJobs chan bool,
-	errChan chan error,
-	jobs *sync.WaitGroup,
-	stream mafia_connection.MafiaService_RouteGameServer,
-) {
-	cnt := 0
-	defer jobs.Done()
-	for {
-		select {
-		case <-stopJobs:
-			return
-		default:
-			message := game.SimpleMessage(cnt)
-			cnt += 1
-			if cnt == 1 {
-				return
-			}
-			if err := stream.Send(message); err != nil {
-				errChan <- err
-				return
-			}
-			time.Sleep(4 * time.Second)
-		}
-	}
-}
-
 func (s *Server) AddPlayer(user *mafia_connection.User, stream mafia_connection.MafiaService_RouteGameServer) uint64 {
 	s.mux.Lock()
 	defer s.mux.Unlock()
@@ -146,6 +118,12 @@ func (s *Server) HandlePlayersActions(
 				curUserData = user
 				id := s.AddPlayer(user, stream)
 				s.rooms[id].JoinRoom(user)
+			case playerAction.GetVote() != nil:
+				roomId := s.playersToRooms[curUserData.ID]
+				s.rooms[roomId].VoteRequest(curUserData, playerAction.GetVote())
+			case playerAction.GetShow() != nil:
+				roomId := s.playersToRooms[curUserData.ID]
+				s.rooms[roomId].ShowRequest(curUserData, playerAction.GetShow())
 			}
 		}
 	}
@@ -155,10 +133,9 @@ func (s *Server) RouteGame(stream mafia_connection.MafiaService_RouteGameServer)
 	stopJobs := make(chan bool)
 	errChan := make(chan error)
 	var jobs sync.WaitGroup
-	jobs.Add(2)
+	jobs.Add(1)
 	defer jobs.Wait()
 
-	go s.StartChat(stopJobs, errChan, &jobs, stream)
 	go s.HandlePlayersActions(stopJobs, errChan, &jobs, stream)
 
 	err := <-errChan

@@ -52,13 +52,13 @@ message PlayerAction {
     oneof Action {
         User Connetion = 1;
         User Vote = 2;
-        User Mafia = 3;
+        User Show = 3;
     }
 }
 
 message ServerAction {
     oneof Action {
-        ChatMessage ChatMessage = 1;
+        string ServerMessage = 1;
         RoomEvent Event = 2;
     }
 }

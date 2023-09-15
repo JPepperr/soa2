@@ -1,10 +1,7 @@
 FROM golang:1.19.4
 
 WORKDIR /mafia/
-COPY go.mod go.sum /mafia/
-COPY protos /mafia/protos/
-COPY game /mafia/game/
-COPY server /mafia/server/
+COPY . /mafia/
 
 RUN apt-get update && apt-get install -y protobuf-compiler
 RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest

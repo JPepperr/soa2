@@ -2,57 +2,84 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log"
 	"mafia/client/lib/cli"
 	mafia_connection "mafia/protos"
-	"math/rand"
+	"mafia/utils"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/c-bata/go-prompt"
+	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Config struct {
-	ServerAddr string `config:"server-addr"`
-	BotMode    bool   `config:"bot"`
+	ServerAddr    string `config:"server-addr"`
+	BotMode       bool   `config:"bot"`
+	RabbitmqCreds string `config:"rabbitmq-creds"`
+}
+
+type Option struct {
+	chat   bool
+	action *mafia_connection.PlayerAction
 }
 
 type Client struct {
 	nickname string
 
-	roomInfo *mafia_connection.RoomInfo
+	possibleOptions map[string]Option
+	roomInfo        *mafia_connection.RoomInfo
 
+	mux        sync.Mutex
+	chat       *ClientChat
 	cli        *cli.Cli
 	prompt     *prompt.Prompt
 	grpcClient mafia_connection.MafiaServiceClient
+	stream     mafia_connection.MafiaService_RouteGameClient
 }
 
 func GetClient() *Client {
 	c, p := cli.GetCli()
 	return &Client{
-		nickname: GenerateNickname(),
-		roomInfo: nil,
-		cli:      c,
-		prompt:   p,
+		nickname:        utils.GenerateNickname(),
+		possibleOptions: make(map[string]Option),
+		roomInfo:        nil,
+		mux:             sync.Mutex{},
+		chat:            createChat(),
+		cli:             c,
+		prompt:          p,
 	}
 }
 
-func (c *Client) PrintRoomInfo() {
+func (c *Client) getMyId() int {
+	for id := range c.roomInfo.Players {
+		if c.roomInfo.Players[id].User.Nickname == c.nickname {
+			return id
+		}
+	}
+	return -1
+}
+
+func (c *Client) printRoomInfo() {
 	if c.roomInfo == nil {
 		return
 	}
 	border := strings.Repeat("-", 75)
 	roomInfo := []string{border}
-	roomInfo = append(roomInfo, fmt.Sprintf("Room: '%d', State: %s", c.roomInfo.RoomID, c.roomInfo.State.String()))
-	for _, player := range c.roomInfo.Players {
+	roomInfo = append(roomInfo, fmt.Sprintf(
+		"Room: '%d', State: %s, Ctrl + D to leave",
+		c.roomInfo.RoomID,
+		c.roomInfo.State.String(),
+	))
+	myId := c.getMyId()
+	for id, player := range c.roomInfo.Players {
 		isMe := ""
-		if player.User.Nickname == c.nickname {
+		if id == myId {
 			isMe = "(You)"
 		}
 		status := "alive"
@@ -68,40 +95,153 @@ func (c *Client) PrintRoomInfo() {
 		))
 	}
 	roomInfo = append(roomInfo, border)
-	c.cli.Println(strings.Join(roomInfo, "\n"))
+	for _, s := range roomInfo {
+		c.cli.Println(s)
+	}
+}
+
+func (c *Client) buildOptions() {
+	for k := range c.possibleOptions {
+		delete(c.possibleOptions, k)
+	}
+	self := c.roomInfo.Players[c.getMyId()]
+	if c.roomInfo.State == mafia_connection.State_END {
+		c.possibleOptions[CHAT_COMMAND] = Option{chat: true}
+		return
+	}
+	if !self.Alive {
+		return
+	}
+	if c.roomInfo.State == mafia_connection.State_NIGHT {
+		if self.Role != mafia_connection.Role_CIVILIAN {
+			c.possibleOptions[CHAT_COMMAND] = Option{chat: true}
+			voteOpt := ""
+			if self.Role == mafia_connection.Role_MAFIA {
+				voteOpt = "kill "
+			} else {
+				voteOpt = "check "
+			}
+			for _, p := range c.roomInfo.Players {
+				if p.Alive {
+					c.possibleOptions[voteOpt+p.User.Nickname] = Option{
+						chat: false,
+						action: &mafia_connection.PlayerAction{
+							Action: &mafia_connection.PlayerAction_Vote{
+								Vote: p.User,
+							},
+						},
+					}
+				}
+			}
+		}
+		return
+	}
+	c.possibleOptions[CHAT_COMMAND] = Option{chat: true}
+	if c.roomInfo.State == mafia_connection.State_DAY {
+		if self.Role == mafia_connection.Role_SHERIFF {
+			for _, p := range c.roomInfo.Players {
+				if p.Alive && p.Role == mafia_connection.Role_MAFIA {
+					c.possibleOptions["show "+p.User.Nickname] = Option{
+						chat: false,
+						action: &mafia_connection.PlayerAction{
+							Action: &mafia_connection.PlayerAction_Show{
+								Show: p.User,
+							},
+						},
+					}
+				}
+			}
+		}
+		for _, p := range c.roomInfo.Players {
+			if p.Alive {
+				c.possibleOptions["vote "+p.User.Nickname] = Option{
+					chat: false,
+					action: &mafia_connection.PlayerAction{
+						Action: &mafia_connection.PlayerAction_Vote{
+							Vote: p.User,
+						},
+					},
+				}
+			}
+		}
+	}
+
+}
+
+func (c *Client) buildOptionsAndSuggests() {
+	c.buildOptions()
+	c.cli.Suggests = make([]prompt.Suggest, 0)
+	for text := range c.possibleOptions {
+		c.cli.Suggests = append(c.cli.Suggests, prompt.Suggest{
+			Text: text,
+		})
+	}
+}
+
+func (c *Client) ResolveAction(action *mafia_connection.ServerAction) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	switch {
+	case action.GetServerMessage() != "":
+		c.cli.Println(action.GetServerMessage())
+	case action.GetEvent() != nil:
+		event := action.GetEvent()
+		addChats := false
+		if c.roomInfo != nil &&
+			c.roomInfo.State == mafia_connection.State_NOT_STARTED &&
+			event.RoomInfo.State != mafia_connection.State_NOT_STARTED {
+			addChats = true
+		}
+		c.roomInfo = event.RoomInfo
+		if addChats {
+			c.addRoleChat()
+		}
+		c.buildOptionsAndSuggests()
+		if event.Event != nil {
+			c.cli.Println(event.Event.Value)
+		}
+		c.printRoomInfo()
+	}
+	return nil
+}
+
+func (c *Client) ResolveCommand(command string) error {
+	c.mux.Lock()
+	defer c.mux.Unlock()
+	if strings.HasPrefix(command, CHAT_COMMAND) {
+		_, ok := c.possibleOptions[CHAT_COMMAND]
+		if !ok {
+			c.cli.Println(UNKNOWN_COMMAND)
+			return errUnknownCommand
+		}
+		return c.sendMessage(command[len(CHAT_COMMAND):])
+	}
+	opt, ok := c.possibleOptions[command]
+	if !ok {
+		c.cli.Println(UNKNOWN_COMMAND)
+		return errUnknownCommand
+	}
+	return c.stream.Send(opt.action)
 }
 
 func (c *Client) HandleServerActions(
 	stopJobs chan bool,
 	jobs *sync.WaitGroup,
-	stream mafia_connection.MafiaService_RouteGameClient,
-) {
+) error {
 	defer jobs.Done()
 	for {
 		select {
 		case <-stopJobs:
-			return
+			return nil
 		default:
-			serverAction, err := stream.Recv()
+			serverAction, err := c.stream.Recv()
 			if err == io.EOF {
-				return
+				return nil
 			}
 			if err != nil {
-				log.Fatalf("Broken channel: %v", err)
+				return err
 			}
-			switch {
-			case serverAction.GetChatMessage() != nil:
-				text := serverAction.GetChatMessage().Text
-				author := serverAction.GetChatMessage().Author.Nickname
-				c.cli.Println(fmt.Sprintf("<%s> %s", author, text))
-			case serverAction.GetEvent() != nil:
-				event := serverAction.GetEvent()
-				c.roomInfo = event.RoomInfo
-				if event.Event != nil {
-					c.cli.Println(event.Event.Value)
-				}
-				c.PrintRoomInfo()
-			}
+			c.ResolveAction(serverAction)
 		}
 	}
 }
@@ -109,7 +249,6 @@ func (c *Client) HandleServerActions(
 func (c *Client) HandleCLIActions(
 	stopJobs chan bool,
 	jobs *sync.WaitGroup,
-	stream mafia_connection.MafiaService_RouteGameClient,
 ) {
 	defer jobs.Done()
 	for {
@@ -120,79 +259,73 @@ func (c *Client) HandleCLIActions(
 			if !ok {
 				return
 			}
-			c.cli.Println(command)
+			c.ResolveCommand(command)
 		}
 	}
 }
 
-func NicknameHash(nick string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(nick))
-	return h.Sum64()
-}
-
-func GenerateNickname() string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	l := rand.Intn(12) + 4
-	b := make([]byte, l)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
-func ValidateNicknameImpl(nick string) string {
-	if len(nick) < 4 || len(nick) > 15 {
-		return "Nickname must be at least 4 characters and no longer than 15"
-	}
-	for _, l := range nick {
-		if !unicode.IsLetter(l) {
-			return "Nickname must contain only letters"
+func (c *Client) HandleChat(
+	stopJobs chan bool,
+	jobs *sync.WaitGroup,
+) {
+	defer jobs.Done()
+	for {
+		select {
+		case <-stopJobs:
+			return
+		case message, ok := <-c.chat.msgs:
+			if !ok {
+				return
+			}
+			c.cli.Println(string(message.Body))
 		}
 	}
-	return ""
-}
-
-func ValidateNickname(nick string) bool {
-	return ValidateNicknameImpl(nick) == ""
-}
-
-func GetErrorMessageForNickname(nick string) string {
-	return ValidateNicknameImpl(nick)
 }
 
 func (c *Client) BeforeConnection() error {
 	for {
-		choice, err := cli.Choice("Select option", []string{CHANGE_NICKNAME_OPTION, CONNECT_TO_SERVER_OPTION})
+		choice, err := cli.Choice("Select option (Ctrl + C to exit)", []string{CHANGE_NICKNAME_OPTION, CONNECT_TO_SERVER_OPTION})
 		if err != nil {
 			return err
 		}
 		if choice == CONNECT_TO_SERVER_OPTION {
 			return nil
 		}
-		c.nickname, err = cli.Input("Enter new nickname", c.nickname, ValidateNickname, GetErrorMessageForNickname)
+		c.nickname, err = cli.Input("Enter new nickname", c.nickname, utils.ValidateNickname, utils.GetErrorMessageForNickname)
 		if err != nil {
 			return err
 		}
 	}
 }
 
-func (c *Client) Run(addr string) {
+func (c *Client) Run(addr string, rabbitMqCreds string) {
 	err := c.BeforeConnection()
 	if err != nil {
 		log.Fatalf("Internal error: %v", err)
 	}
 
+	chatConn, err := amqp.Dial(rabbitMqCreds)
+	if err != nil {
+		log.Fatalf("Fail to connect to rabbitmq: %v", err)
+	}
+	defer chatConn.Close()
+
+	c.chat.ch, err = chatConn.Channel()
+	if err != nil {
+		log.Fatalf("Fail to open channel: %v", err)
+	}
+	defer c.chat.ch.Close()
+
 	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials())) // TODO: Add TLS
 	if err != nil {
-		log.Fatalf("Fail to dial: %v", err)
+		log.Fatalf("Fail to connect server: %v", err)
 	}
 	defer conn.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c.grpcClient = mafia_connection.NewMafiaServiceClient(conn)
-	stream, err := c.grpcClient.RouteGame(ctx)
+	c.stream, err = c.grpcClient.RouteGame(ctx)
 	if err != nil {
 		log.Fatalf("RouteGame failed: %v", err)
 	}
@@ -200,22 +333,37 @@ func (c *Client) Run(addr string) {
 	init := &mafia_connection.PlayerAction{
 		Action: &mafia_connection.PlayerAction_Connetion{
 			Connetion: &mafia_connection.User{
-				ID:       NicknameHash(c.nickname),
+				ID:       utils.NicknameHash(c.nickname),
 				Nickname: c.nickname,
 			},
 		},
 	}
-	if err := stream.Send(init); err != nil {
-		log.Fatalf("Failed to init connection with server: %v", err)
+	if err := c.stream.Send(init); err != nil {
+		log.Fatalf("Failed to send init request to server: %v", err)
+	}
+	serverAction, err := c.stream.Recv()
+	if err != nil {
+		log.Fatalf("Failed to get init response from server: %v", err)
+		cancel()
+		return
+	}
+	c.ResolveAction(serverAction)
+
+	err = c.initChat()
+	if err != nil {
+		log.Fatalf("Failed to init chat: %v", err)
+		cancel()
+		return
 	}
 
 	stopJobs := make(chan bool)
 	var jobs sync.WaitGroup
-	jobs.Add(2)
+	jobs.Add(3)
 	defer jobs.Wait()
 
-	go c.HandleCLIActions(stopJobs, &jobs, stream)
-	go c.HandleServerActions(stopJobs, &jobs, stream)
+	go c.HandleCLIActions(stopJobs, &jobs)
+	go c.HandleChat(stopJobs, &jobs)
+	go c.HandleServerActions(stopJobs, &jobs)
 	c.prompt.Run()
 	cancel()
 	close(stopJobs)
@@ -224,4 +372,7 @@ func (c *Client) Run(addr string) {
 var (
 	CONNECT_TO_SERVER_OPTION = "Connect to server"
 	CHANGE_NICKNAME_OPTION   = "Change nickname"
+	CHAT_COMMAND             = "chat "
+	UNKNOWN_COMMAND          = "Unknown command"
+	errUnknownCommand        = errors.New(UNKNOWN_COMMAND)
 )
