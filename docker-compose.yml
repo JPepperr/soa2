@@ -6,6 +6,13 @@ services:
     ports:
       - 5672:5672
       - 15672:15672
+  stats:
+    image: mafia-stats
+    build:
+      context: ./
+      dockerfile: stats.dockerfile
+    ports:
+      - 6669:6669
   server:
     image: mafia-server
     build:
@@ -15,3 +22,4 @@ services:
       - 5050:5050
     depends_on:
       - rabbitmq
+      - stats
