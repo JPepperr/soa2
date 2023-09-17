@@ -13,8 +13,9 @@ import (
 )
 
 type Config struct {
-	Port     uint32 `config:"port"`
-	LogLevel string `config:"log-level"`
+	Port          uint32 `config:"port"`
+	StatsEndpoint string `config:"stats-endpoint"`
+	LogLevel      string `config:"log-level"`
 }
 
 type Server struct {
@@ -22,6 +23,7 @@ type Server struct {
 	rooms          map[uint64]*game.Room
 	Logger         *zap.Logger
 	mux            sync.Mutex
+	statsEndpoint  string
 
 	mafia_connection.UnimplementedMafiaServiceServer
 }
@@ -63,6 +65,7 @@ func InitServer(cfg *Config) (*Server, error) {
 		playersToRooms: make(map[uint64]uint64),
 		rooms:          make(map[uint64]*game.Room),
 		mux:            sync.Mutex{},
+		statsEndpoint:  cfg.StatsEndpoint,
 		Logger:         logger,
 	}, nil
 }
@@ -80,7 +83,7 @@ func (s *Server) AddPlayer(user *mafia_connection.User, stream mafia_connection.
 			return id
 		}
 	}
-	room := game.GetNewRoom()
+	room := game.GetNewRoom(s.statsEndpoint)
 	s.rooms[room.ID] = room
 	room.TryToAddPlayer(user, stream)
 	s.playersToRooms[user.ID] = room.ID

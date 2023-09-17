@@ -33,6 +33,8 @@ func InitServer() *Server {
 	router.DELETE("/user/:id", srv.DeleteUserData)
 	router.GET("/users", srv.GetUsers)
 
+	router.POST("/push", srv.SaveGameResult)
+
 	return &srv
 }
 
@@ -43,6 +45,20 @@ func (s *Server) Run(cfg *Config) {
 
 func SendError(c *gin.Context, code int, err error) {
 	c.JSON(code, gin.H{"error": err.Error()})
+}
+
+func (s *Server) SaveGameResult(c *gin.Context) {
+	var game storage.GameInfo
+	if err := c.BindJSON(&game); err != nil {
+		SendError(c, http.StatusBadRequest, err)
+		return
+	}
+	fmt.Println(game)
+	if err := s.storage.SaveGameResult(&game); err != nil {
+		SendError(c, http.StatusBadRequest, err)
+		return
+	}
+	c.JSON(http.StatusCreated, game)
 }
 
 func (s *Server) UpdateUser(c *gin.Context) {

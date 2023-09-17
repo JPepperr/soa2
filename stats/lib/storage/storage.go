@@ -22,15 +22,15 @@ type UserInfo struct {
 }
 
 type Player struct {
-	nickname string
-	isWinner bool
-	role     string
+	Nickname string `json:"nickname"`
+	IsWinner bool   `json:"isWinner"`
+	Role     string `json:"role"`
 }
 
 type GameInfo struct {
-	id       uint64
-	duration int64
-	players  []Player
+	Id       uint64   `json:"id"`
+	Duration int64    `json:"duration"`
+	Players  []Player `json:"players"`
 }
 
 type Storage struct {
@@ -73,6 +73,30 @@ func (s *Storage) getOrCreateUser(nickname string) *UserInfo {
 
 func getPathForNickcname(nickname string) string {
 	return path.Join(PICS_DIR, nickname)
+}
+
+func (s *Storage) SaveGameResult(game *GameInfo) error {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	_, ok := s.games[game.Id]
+	if ok {
+		return errAlreadyExistingGame
+	}
+
+	s.games[game.Id] = game
+	for _, player := range game.Players {
+		user := s.getOrCreateUser(player.Nickname)
+		user.gamesCnt++
+		if player.IsWinner {
+			user.wins++
+		} else {
+			user.loses++
+		}
+		user.duration += game.Duration
+	}
+
+	return nil
 }
 
 func (s *Storage) UpdateUser(nickname string, user *UserR) error {
@@ -168,6 +192,7 @@ const (
 )
 
 var (
-	errNotFound = errors.New("user not found")
-	errFSError  = errors.New("internal FS error")
+	errNotFound            = errors.New("user not found")
+	errAlreadyExistingGame = errors.New("game already exist")
+	errFSError             = errors.New("internal FS error")
 )

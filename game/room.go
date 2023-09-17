@@ -1,11 +1,17 @@
 package game
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
 	mafia_connection "mafia/protos"
+	"mafia/stats/lib/storage"
 	"mafia/utils"
 	"math/rand"
+	"net/http"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -19,9 +25,11 @@ type Player struct {
 }
 
 type Room struct {
-	ID      uint64
-	state   mafia_connection.State
-	players []*Player
+	ID              uint64
+	state           mafia_connection.State
+	players         []*Player
+	statsEndpoint   string
+	gameStartedTime time.Time
 
 	mux sync.Mutex
 }
@@ -106,6 +114,48 @@ func (r *Room) SendMessageForUser(user *mafia_connection.User, message string) {
 	r.sendMessageForUser(user, message)
 }
 
+func (r *Room) sendGameResult(isMafiaWon bool) error {
+	gamePlayers := make([]storage.Player, 0)
+	for _, player := range r.players {
+		isWinner := false
+		if player.info.Role == mafia_connection.Role_MAFIA && isMafiaWon {
+			isWinner = true
+		}
+		if player.info.Role != mafia_connection.Role_MAFIA && !isMafiaWon {
+			isWinner = true
+		}
+		gamePlayers = append(gamePlayers, storage.Player{
+			Nickname: player.info.User.Nickname,
+			IsWinner: isWinner,
+			Role:     player.info.Role.String(),
+		})
+	}
+	gameInfo := storage.GameInfo{
+		Id:       r.ID,
+		Duration: int64(time.Since(r.gameStartedTime)),
+		Players:  gamePlayers,
+	}
+	jsonData, err := json.Marshal(gameInfo)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", r.statsEndpoint, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return errStatSendingFailed
+	}
+	return nil
+}
+
 func (r *Room) changeStateAfterVotes() {
 	cntMafia := 0
 	cntNotMafia := 0
@@ -121,11 +171,13 @@ func (r *Room) changeStateAfterVotes() {
 	}
 	if cntMafia == 0 {
 		r.changeState(mafia_connection.State_END)
+		r.sendGameResult(false)
 		r.sendForAll("Civilians won")
 		return
 	}
 	if cntMafia == cntNotMafia {
 		r.changeState(mafia_connection.State_END)
+		r.sendGameResult(true)
 		r.sendForAll("Mafia won")
 		return
 	}
@@ -277,6 +329,7 @@ func (r *Room) changeState(newState mafia_connection.State) {
 }
 
 func (r *Room) startGame() {
+	r.gameStartedTime = time.Now()
 	r.changeState(mafia_connection.State_NIGHT)
 	roles := []mafia_connection.Role{
 		mafia_connection.Role_CIVILIAN,
@@ -312,12 +365,14 @@ func (r *Room) LeaveRoom(user *mafia_connection.User) {
 	}
 }
 
-func GetNewRoom() *Room {
+func GetNewRoom(statsEndpoint string) *Room {
 	return &Room{
-		ID:      rand.Uint64(),
-		players: make([]*Player, 0),
-		mux:     sync.Mutex{},
-		state:   mafia_connection.State_NOT_STARTED,
+		ID:              rand.Uint64(),
+		players:         make([]*Player, 0),
+		mux:             sync.Mutex{},
+		state:           mafia_connection.State_NOT_STARTED,
+		statsEndpoint:   statsEndpoint,
+		gameStartedTime: time.Now(),
 	}
 }
 
@@ -357,3 +412,7 @@ func (r *Room) SendIncorrectRequestMessage(user *mafia_connection.User) {
 func (r *Room) sendIncorrectRequestMessage(user *mafia_connection.User) {
 	r.sendInfoForUser(user, "Incorrect command")
 }
+
+var (
+	errStatSendingFailed = errors.New("failed to send game stats")
+)

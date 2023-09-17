@@ -20,8 +20,9 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	cfg := server.Config{
-		Port:     5050,
-		LogLevel: "info",
+		Port:          5050,
+		StatsEndpoint: "http://localhost:6669/push",
+		LogLevel:      "info",
 	}
 
 	err := confita.NewLoader(
