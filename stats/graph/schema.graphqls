@@ -1,0 +1,25 @@
+input NewComment {
+  id: String!
+  text: String!
+}
+
+type User {
+  nickname: String!
+  isWinner: Boolean!
+  role: String!
+}
+
+type Game {
+  id: String!
+  user: [User!]!
+  comments: [String!]!
+}
+
+type Query {
+  games: [String!]!
+  gameStats(id: String!): Game!
+}
+
+type Mutation {
+  createComment(input: NewComment!): Game!
+}

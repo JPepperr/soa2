@@ -21,7 +21,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	cfg := server.Config{
 		Port:          5050,
-		StatsEndpoint: "http://localhost:6669/push",
+		StatsEndpoint: "http://[::]:6669/push",
 		LogLevel:      "info",
 	}
 
@@ -33,6 +33,8 @@ func main() {
 		fmt.Println("Failed to read config", err)
 		return
 	}
+
+	fmt.Println(cfg.StatsEndpoint)
 
 	srv, err := server.InitServer(&cfg)
 	if err != nil {

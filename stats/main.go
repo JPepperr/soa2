@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mafia/stats/lib/server"
 
+	// _ "github.com/99designs/gqlgen"
 	"github.com/heetch/confita"
 	"github.com/heetch/confita/backend/env"
 	"github.com/heetch/confita/backend/flags"
@@ -12,7 +13,8 @@ import (
 
 func main() {
 	cfg := server.Config{
-		Port: 6669,
+		UserStatsPort: 6669,
+		GameStatsPort: 7776,
 	}
 
 	err := confita.NewLoader(

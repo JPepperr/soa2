@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/textproto"
 	"path"
+	"strconv"
 	"sync"
 
 	"github.com/liamg/memoryfs"
@@ -31,6 +32,7 @@ type GameInfo struct {
 	Id       uint64   `json:"id"`
 	Duration int64    `json:"duration"`
 	Players  []Player `json:"players"`
+	Comments []string `json:"comments"`
 }
 
 type Storage struct {
@@ -186,6 +188,37 @@ func (s *Storage) createFileHeader(fileName string) (*multipart.FileHeader, []by
 	}, bytes
 }
 
+func (s *Storage) GetGameIds() []string {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	res := make([]string, 0)
+	for id := range s.games {
+		res = append(res, strconv.FormatUint(id, 10))
+	}
+	return res
+}
+
+func (s *Storage) GetGame(id uint64) (GameInfo, error) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	game, ok := s.games[id]
+	if !ok {
+		return GameInfo{}, errGameNotFound
+	}
+	return *game, nil
+}
+
+func (s *Storage) AddComment(id uint64, comment string) error {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	game, ok := s.games[id]
+	if !ok {
+		return errGameNotFound
+	}
+	game.Comments = append(s.games[id].Comments, comment)
+	return nil
+}
+
 const (
 	PICS_DIR = "data/pics"
 	PDF_DIR  = "data/pdf"
@@ -195,4 +228,5 @@ var (
 	errNotFound            = errors.New("user not found")
 	errAlreadyExistingGame = errors.New("game already exist")
 	errFSError             = errors.New("internal FS error")
+	errGameNotFound        = errors.New("game not found")
 )

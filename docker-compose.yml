@@ -6,6 +6,8 @@ services:
     ports:
       - 5672:5672
       - 15672:15672
+    networks:
+      - mafianet
   stats:
     image: mafia-stats
     build:
@@ -13,13 +15,24 @@ services:
       dockerfile: stats.dockerfile
     ports:
       - 6669:6669
+      - 7776:7776
+    networks:
+      - mafianet
   server:
+    environment:
+    - stats-endpoint=http://soa2_stats_1:6669/push
     image: mafia-server
     build:
       context: ./
       dockerfile: server.dockerfile
     ports:
       - 5050:5050
+    networks:
+      - mafianet
     depends_on:
       - rabbitmq
       - stats
+
+networks:
+  mafianet:
+      driver: bridge

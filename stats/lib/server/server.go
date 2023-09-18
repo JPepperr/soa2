@@ -6,27 +6,41 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+
+	"mafia/stats/graph"
+
+	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/playground"
 )
 
 type Config struct {
-	Port uint32 `config:"port"`
+	UserStatsPort uint32 `config:"user-stats-port"`
+	GameStatsPort uint32 `config:"game-stats-port"`
 }
 
 type Server struct {
 	router  *gin.Engine
 	storage *storage.Storage
+	gqlsrv  *handler.Server
 }
 
 func InitServer() *Server {
 	router := gin.Default()
 
+	storage := storage.GetNewStorage()
+
 	srv := Server{
 		router:  router,
-		storage: storage.GetNewStorage(),
+		storage: storage,
+		gqlsrv:  handler.NewDefaultServer(graph.NewExecutableSchema(graph.Config{Resolvers: &graph.Resolver{Storage: storage}})),
 	}
+
+	http.Handle("/", playground.Handler("GraphQL playground", "/query"))
+	http.Handle("/query", srv.gqlsrv)
 
 	router.POST("/user/:id", srv.UpdateUser)
 	router.GET("/user/:id", srv.GetUser)
@@ -39,8 +53,23 @@ func InitServer() *Server {
 }
 
 func (s *Server) Run(cfg *Config) {
-	addr := fmt.Sprintf("[::]:%d", cfg.Port)
-	s.router.Run(addr)
+	wg := sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		_ = http.ListenAndServe(fmt.Sprintf("[::]:%d", cfg.UserStatsPort), s.router.Handler())
+	}()
+
+	go func() {
+		defer wg.Done()
+		err := http.ListenAndServe(fmt.Sprintf("[::]:%d", cfg.GameStatsPort), nil)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+	}()
+
+	wg.Wait()
 }
 
 func SendError(c *gin.Context, code int, err error) {

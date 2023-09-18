@@ -134,6 +134,7 @@ func (r *Room) sendGameResult(isMafiaWon bool) error {
 		Id:       r.ID,
 		Duration: int64(time.Since(r.gameStartedTime)),
 		Players:  gamePlayers,
+		Comments: make([]string, 0),
 	}
 	jsonData, err := json.Marshal(gameInfo)
 	if err != nil {
