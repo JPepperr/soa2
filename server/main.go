@@ -40,7 +40,7 @@ func main() {
 		return
 	}
 
-	addr := fmt.Sprintf("[::]:%d", cfg.Port)
+	addr := fmt.Sprintf(":%d", cfg.Port)
 	srv.Logger.Info("Start to listen", zap.String("addr", addr))
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {

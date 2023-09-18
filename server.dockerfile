@@ -14,4 +14,6 @@ WORKDIR /mafia/server
 RUN go mod download
 RUN go build -o server
 
+EXPOSE 5050
+
 ENTRYPOINT ["/mafia/server/server"]

@@ -4,8 +4,8 @@ services:
   rabbitmq:
     image: "rabbitmq:3-management-alpine"
     ports:
-      - 5672:5672
-      - 15672:15672
+      - 5672:5672/tcp
+      - 15672:15672/tcp
     networks:
       - mafianet
   stats:
@@ -15,8 +15,8 @@ services:
       context: ./
       dockerfile: stats.dockerfile
     ports:
-      - 6669:6669
-      - 7776:7776
+      - 6669:6669/tcp
+      - 7776:7776/tcp
     networks:
       - mafianet
     depends_on:
@@ -30,7 +30,7 @@ services:
       context: ./
       dockerfile: server.dockerfile
     ports:
-      - 5050:5050
+      - 5050:5050/tcp
     networks:
       - mafianet
     depends_on:
