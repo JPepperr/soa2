@@ -226,7 +226,6 @@ func (s *Server) SaveGameResult(c *gin.Context) {
 		SendError(c, http.StatusBadRequest, err)
 		return
 	}
-	fmt.Println(game)
 	if err := s.storage.SaveGameResult(&game); err != nil {
 		SendError(c, http.StatusBadRequest, err)
 		return
@@ -290,15 +289,17 @@ func (s *Server) GetUser(c *gin.Context) {
 	writer := multipart.NewWriter(c.Writer)
 	c.Header("Content-Type", "multipart/form-data")
 
-	fw, err := writer.CreateFormFile("picture", "picture")
-	if err != nil {
-		SendError(c, http.StatusNotFound, err)
-		return
-	}
-	_, err = fw.Write(picData)
-	if err != nil {
-		SendError(c, http.StatusNotFound, err)
-		return
+	if len(picData) > 0 {
+		fw, err := writer.CreateFormFile("picture", "picture")
+		if err != nil {
+			SendError(c, http.StatusNotFound, err)
+			return
+		}
+		_, err = fw.Write(picData)
+		if err != nil {
+			SendError(c, http.StatusNotFound, err)
+			return
+		}
 	}
 
 	err = writer.WriteField("nickname", user.Nickname)

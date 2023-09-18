@@ -19,19 +19,21 @@ func GeneratePDF(userData storage.UserInfo, imageDate []byte) ([]byte, error) {
 		return make([]byte, 0), err
 	}
 
-	f, err := os.CreateTemp("", "image")
-	if err != nil {
-		return make([]byte, 0), err
-	}
-	defer os.Remove(f.Name())
-	if _, err := f.Write(imageDate); err != nil {
-		return make([]byte, 0), err
-	}
-	if err := f.Close(); err != nil {
-		return make([]byte, 0), err
-	}
+	if len(imageDate) > 0 {
+		f, err := os.CreateTemp("", "image")
+		if err != nil {
+			return make([]byte, 0), err
+		}
+		defer os.Remove(f.Name())
+		if _, err := f.Write(imageDate); err != nil {
+			return make([]byte, 0), err
+		}
+		if err := f.Close(); err != nil {
+			return make([]byte, 0), err
+		}
 
-	pdf.Image(f.Name(), 200, 50, nil)
+		pdf.Image(f.Name(), 200, 50, nil)
+	}
 
 	err = pdf.SetFont("consolas", "", 14)
 	if err != nil {
@@ -59,7 +61,7 @@ func GeneratePDF(userData storage.UserInfo, imageDate []byte) ([]byte, error) {
 	pdf.SetXY(200, 350)
 	pdf.Cell(nil, fmt.Sprintf("Time in game (nanosec): %d", userData.Duration))
 
-	f, err = os.CreateTemp("", "stat")
+	f, err := os.CreateTemp("", "stat")
 	if err != nil {
 		return make([]byte, 0), err
 	}

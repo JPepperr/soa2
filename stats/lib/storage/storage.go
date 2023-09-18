@@ -181,7 +181,7 @@ func (s *Storage) GetUser(nickname string) (*UserR, []byte, error) {
 	}
 	header, data := s.createFileHeader(getPathForNickcname(nickname))
 	if header == nil {
-		return nil, data, errFSError
+		return nil, data, nil
 	}
 
 	return &UserR{
@@ -204,7 +204,7 @@ func (s *Storage) GetFullUser(nickname string) (UserInfo, []byte, error) {
 	}
 	header, data := s.createFileHeader(getPathForNickcname(nickname))
 	if header == nil {
-		return UserInfo{}, data, errFSError
+		return UserInfo{}, data, nil
 	}
 
 	return *user, data, nil
