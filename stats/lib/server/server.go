@@ -112,7 +112,7 @@ func (s *Server) StartWorker(stopJobs chan bool, jobs *sync.WaitGroup) {
 			id := req[0]
 			name := req[1]
 			err := s.GeneratePdf(id, name)
-			if err != nil {
+			if err == nil {
 				message.Ack(false)
 			}
 		}
