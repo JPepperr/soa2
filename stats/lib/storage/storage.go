@@ -202,11 +202,7 @@ func (s *Storage) GetFullUser(nickname string) (UserInfo, []byte, error) {
 	if !ok || user.Nickname != nickname {
 		return UserInfo{}, data, errNotFound
 	}
-	header, data := s.createFileHeader(getPathForNickcname(nickname))
-	if header == nil {
-		return UserInfo{}, data, nil
-	}
-
+	_, data = s.createFileHeader(getPathForNickcname(nickname))
 	return *user, data, nil
 }
 
