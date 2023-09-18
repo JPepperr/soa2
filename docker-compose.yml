@@ -6,8 +6,6 @@ services:
     ports:
       - 5672:5672/tcp
       - 15672:15672/tcp
-    networks:
-      - mafianet
   stats:
     image: mafia-stats
     restart: on-failure
@@ -17,8 +15,6 @@ services:
     ports:
       - 6669:6669/tcp
       - 7776:7776/tcp
-    networks:
-      - mafianet
     depends_on:
       - rabbitmq
   server:
@@ -31,11 +27,5 @@ services:
       dockerfile: server.dockerfile
     ports:
       - 5050:5050/tcp
-    networks:
-      - mafianet
     depends_on:
       - stats
-
-networks:
-  mafianet:
-      driver: bridge
