@@ -21,6 +21,14 @@ curl -X GET http://localhost:6669/user/jpepper --output "test_bin_output"
 curl -X GET "http://localhost:6669/users?ids=jpepper"
 ```
 данные пользователя без картинки
+```
+curl -X GET http://localhost:6669/stat/jpepper
+```
+позволяет получить ссылку для скачивания pdf статистики
+```
+curl -X GET http://localhost:6669/pdf/VlBzgbaiC --output "check_stat.pdf"
+```
+скачать запрошенную статистику в файл `check_stat.pdf`
 
 ---
 

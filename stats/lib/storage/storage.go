@@ -13,13 +13,13 @@ import (
 )
 
 type UserInfo struct {
-	nickname string
-	sex      string
-	email    string
-	gamesCnt int
-	wins     int
-	loses    int
-	duration int64
+	Nickname string
+	Sex      string
+	Email    string
+	GamesCnt int
+	Wins     int
+	Loses    int
+	Duration int64
 }
 
 type Player struct {
@@ -67,7 +67,7 @@ func (s *Storage) getOrCreateUser(nickname string) *UserInfo {
 		return user
 	} else {
 		s.users[nickname] = &UserInfo{
-			nickname: nickname,
+			Nickname: nickname,
 		}
 		return s.users[nickname]
 	}
@@ -89,15 +89,42 @@ func (s *Storage) SaveGameResult(game *GameInfo) error {
 	s.games[game.Id] = game
 	for _, player := range game.Players {
 		user := s.getOrCreateUser(player.Nickname)
-		user.gamesCnt++
+		user.GamesCnt++
 		if player.IsWinner {
-			user.wins++
+			user.Wins++
 		} else {
-			user.loses++
+			user.Loses++
 		}
-		user.duration += game.Duration
+		user.Duration += game.Duration
 	}
 
+	return nil
+}
+
+func (s *Storage) GetPdfData(name string) ([]byte, error) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	bytes := make([]byte, 0)
+	file, err := s.fs.Open(path.Join(PDF_DIR, name))
+	if err != nil {
+		return bytes, err
+	}
+	bytes, err = io.ReadAll(file)
+	if err != nil {
+		return bytes, err
+	}
+	return bytes, nil
+}
+
+func (s *Storage) SavePdf(name string, data []byte) error {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	path := path.Join(PDF_DIR, name)
+	if err := s.fs.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -107,9 +134,9 @@ func (s *Storage) UpdateUser(nickname string, user *UserR) error {
 
 	curUser := s.getOrCreateUser(nickname)
 
-	curUser.nickname = user.Nickname
-	curUser.sex = user.Sex
-	curUser.email = user.Email
+	curUser.Nickname = user.Nickname
+	curUser.Sex = user.Sex
+	curUser.Email = user.Email
 
 	if user.Picture != nil {
 		file, err := user.Picture.Open()
@@ -132,12 +159,12 @@ func (s *Storage) DeleteUserData(nickname string) error {
 	defer s.mux.Unlock()
 
 	user, ok := s.users[nickname]
-	if !ok || user.nickname != nickname {
+	if !ok || user.Nickname != nickname {
 		return errNotFound
 	}
-	user.nickname = ""
-	user.email = ""
-	user.sex = ""
+	user.Nickname = ""
+	user.Email = ""
+	user.Sex = ""
 	s.fs.Remove(getPathForNickcname(nickname))
 	return nil
 }
@@ -149,7 +176,7 @@ func (s *Storage) GetUser(nickname string) (*UserR, []byte, error) {
 	data := make([]byte, 0)
 
 	user, ok := s.users[nickname]
-	if !ok || user.nickname != nickname {
+	if !ok || user.Nickname != nickname {
 		return nil, data, errNotFound
 	}
 	header, data := s.createFileHeader(getPathForNickcname(nickname))
@@ -158,11 +185,29 @@ func (s *Storage) GetUser(nickname string) (*UserR, []byte, error) {
 	}
 
 	return &UserR{
-		Nickname: user.nickname,
-		Sex:      user.sex,
-		Email:    user.email,
+		Nickname: user.Nickname,
+		Sex:      user.Sex,
+		Email:    user.Email,
 		Picture:  header,
 	}, data, nil
+}
+
+func (s *Storage) GetFullUser(nickname string) (UserInfo, []byte, error) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	data := make([]byte, 0)
+
+	user, ok := s.users[nickname]
+	if !ok || user.Nickname != nickname {
+		return UserInfo{}, data, errNotFound
+	}
+	header, data := s.createFileHeader(getPathForNickcname(nickname))
+	if header == nil {
+		return UserInfo{}, data, errFSError
+	}
+
+	return *user, data, nil
 }
 
 func (s *Storage) createFileHeader(fileName string) (*multipart.FileHeader, []byte) {

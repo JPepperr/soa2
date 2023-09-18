@@ -34,8 +34,6 @@ func main() {
 		return
 	}
 
-	fmt.Println(cfg.StatsEndpoint)
-
 	srv, err := server.InitServer(&cfg)
 	if err != nil {
 		fmt.Println("Failed to init server", err)

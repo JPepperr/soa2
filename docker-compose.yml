@@ -10,6 +10,7 @@ services:
       - mafianet
   stats:
     image: mafia-stats
+    restart: on-failure
     build:
       context: ./
       dockerfile: stats.dockerfile
@@ -18,6 +19,8 @@ services:
       - 7776:7776
     networks:
       - mafianet
+    depends_on:
+      - rabbitmq
   server:
     environment:
     - stats-endpoint=http://soa2_stats_1:6669/push
@@ -30,7 +33,6 @@ services:
     networks:
       - mafianet
     depends_on:
-      - rabbitmq
       - stats
 
 networks:

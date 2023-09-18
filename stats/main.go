@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"mafia/stats/lib/server"
+	"math/rand"
+	"time"
 
 	// _ "github.com/99designs/gqlgen"
 	"github.com/heetch/confita"
@@ -12,6 +14,7 @@ import (
 )
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 	cfg := server.Config{
 		UserStatsPort: 6669,
 		GameStatsPort: 7776,
