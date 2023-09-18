@@ -25,6 +25,7 @@ services:
     environment:
     - stats-endpoint=http://soa2_stats_1:6669/push
     image: mafia-server
+    restart: on-failure
     build:
       context: ./
       dockerfile: server.dockerfile
